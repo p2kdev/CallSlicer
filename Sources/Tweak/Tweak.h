@@ -3,8 +3,6 @@
 #import <CoreFoundation/CoreFoundation.h>
 #import <os/log.h>
 #import <objc/runtime.h>
-#import <Cephei/HBPreferences.h>
-#import <BulletinBoard/BBAction.h>
 #import <dlfcn.h>
 
 #import "./headers/BulletinBoard/BBBulletin.h"

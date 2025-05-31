@@ -1,5 +1,7 @@
 #import "Tweak.h"
 
+BOOL enabled = true; // Set to false to disable the tweak.
+
 extern CFNotificationCenterRef CFNotificationCenterGetDistributedCenter(void);
 
 //-MARK: Utility
@@ -30,45 +32,9 @@ static bool distributedCenterIsAvailable()
     return false;
 }
 
-
-
-//-MARK: For CFNotificationCenter
-static bool isOnLockscreen = true;
-static bool isBeingLocked = true;
-
-static void displayStatus(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo)
-{
-    isOnLockscreen = true;
-    NSLog(@"displayStatus - isOnLockscreen: %d", isOnLockscreen);
-}
-
-static void lockstate(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo)
-{
-    isOnLockscreen = isBeingLocked ? isBeingLocked : !isOnLockscreen;
-    isBeingLocked = false;
-    NSLog(@"lockstate - isOnLockscreen: %d", isOnLockscreen);
-}
-
-static void lockcomplete(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo)
-{
-    isBeingLocked = true;
-}
-
-
-
-                         
-//-MARK: For HBPreferences
-HBPreferences *preferences;
-BOOL enabled = true;
-BOOL enabledWhenRingerOn = false;
-BOOL enabledOnlyOnLockScreen = true;
-//NSString *message;
-
-
-
-
 //-MARK: For SpringBoard
-static NSString *targetSectionID = @"jp.naver.line";
+static NSString *targetSectionID = @"";
+static NSString *targetProcessName = @""; // Set to the process name of the target app.
 
 static bool isConnected() {
     id appInstance = [UIApplication sharedApplication];
@@ -85,17 +51,6 @@ static bool isConnected() {
     return false;
 }
 
-static bool checkRinger() { //Must be called on SpringBoard.
-    return enabledWhenRingerOn ? true : [[%c(SBMediaController) sharedInstance] isRingerMuted];
-}
-
-static bool checkLockscreen() {
-    return enabledOnlyOnLockScreen ? isOnLockscreen : true;
-}
-
-
-
-
 static BBSound *getBBSound()
 {
     TLAlertConfiguration *toneAlertConfig = [[%c(TLAlertConfiguration) alloc] initWithType: 1];
@@ -107,11 +62,11 @@ static BBSound *getBBSound()
 
 //Thanks for Nepeta. (Notifica)
 static id bbServer = nil;
-static void fakeNotification(NSString *sectionID, NSString *message) {
+static void fakeNotification(NSString *sectionID, NSString *appName, NSString *message) {
     BBBulletin *bulletin = [[%c(BBBulletin) alloc] init];
     NSDate *date = [NSDate date];
     
-    bulletin.title = @"CallSlicer";
+    bulletin.title = appName;
     bulletin.message = message;
     bulletin.sectionID = sectionID;
     bulletin.bulletinID = [[NSProcessInfo processInfo] globallyUniqueString];
@@ -138,7 +93,7 @@ static void fakeNotification(NSString *sectionID, NSString *message) {
 static void sliceNotification(CFNotificationCenterRef center, void *observer, CFStringRef name, const void *object, CFDictionaryRef userInfo)  //called on SpringBoard.
 {
     NSLog(@"sliceNotification");
-    if(enabled && checkLockscreen() && checkRinger())
+    if(enabled)
     {
         NSLog(@"userInfo: %@",userInfo);
         
@@ -149,13 +104,14 @@ static void sliceNotification(CFNotificationCenterRef center, void *observer, CF
         NSDictionary *reciever = (NSDictionary *)(__bridge userInfo);
         
         NSString *target = reciever[@"targetSectionID"];
+        NSString *targetProcess = reciever[@"targetProcessName"];
         NSString *displayName = reciever[@"displayName"];
         NSString *video = reciever[@"hasVideo"];
         NSLog(@"target: %@\ndisplayName: %@\nvideo: %@", target, displayName, video);
         
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 1 * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            fakeNotification(target,
-                             [NSString stringWithFormat:@"You are receiving a %@Call from %@!", video, displayName]);
+            fakeNotification(target,targetProcess,
+                             [NSString stringWithFormat:@"%@Call from %@!", video, displayName]);
         });
     }
     
@@ -181,57 +137,6 @@ static void prepareDistributedCenter(CFNotificationCenterRef center, void *obser
         preparedDC = true;
     }
 }
-
-    
-                             
-%hook SpringBoard
-
--(void)applicationDidFinishLaunching:(id)application {
-    %orig;
-}
-
-%end
-
-
-%hook SBDashBoardViewController
-
--(void)viewWillAppear:(BOOL)animated {
-    %orig;
-    
-    isOnLockscreen = !self.authenticated;
-    NSLog(@"viewWillAppear - isOnLockscreen: %d", isOnLockscreen);
-    
-    //Debug
-    //    id ins = [%c(BCBatteryDeviceController) sharedInstance];
-    //
-    //    NSLog(@"BCBatteryDevice:\n %@", ins);
-    //    NSLog(@"BCBatteryDevice:\n %@", ((BCBatteryDeviceController *)ins).connectedDevices);
-}
-
-%end
-
-
-//BulletinBoard
-%hook BBServer
-
-- (void)publishBulletin:(BBBulletin *)bulletin destinations:(NSUInteger)destinations
-{
-    //Debug
-    
-//    BBSound *sound = bulletin.sound;
-//    bool hasSound = sound != nil;
-//    bool isLINE = [bulletin.sectionID isEqualToString: targetSectionID];
-//    if(!hasSound && isLINE && !enabled) { return; }
-    
-    %orig;
-    
-    
-//    NSLog(@"BBServer publishBulletin\nTitle: %@\nSubtitle: %@\nMessage: %@\nBulletin: %@\ndestinations: %@", bulletin.title, bulletin.subtitle, bulletin.message, bulletin, @(destinations).stringValue);
-//    NSLog(@"BBSound: %@, \nVibration Pattern: %@ \nVibration Identifier: %@", sound, [sound vibrationPattern], [sound vibrationIdentifier]);
-//    NSLog(@"hasSound: %d, \nisLINE: %d, \nbulletin.sectionID: %@, \ntargetSectionID: %@", hasSound, isLINE, bulletin.sectionID, targetSectionID);
-}
-
-%end
 
 %hook BBServer
 
@@ -261,9 +166,6 @@ static void prepareDistributedCenter(CFNotificationCenterRef center, void *obser
 %end
 
 
-
-
-
 //-MARK: For Third-Party Calling Apps
 %hook CXProvider
 
@@ -280,9 +182,10 @@ static void prepareDistributedCenter(CFNotificationCenterRef center, void *obser
         NSString *displayName = callInfo.localizedCallerName;
         
         CFMutableDictionaryRef dictionary = CFDictionaryCreateMutable(NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+        CFDictionaryAddValue(dictionary, @"targetProcessName", targetProcessName);
         CFDictionaryAddValue(dictionary, @"targetSectionID", targetSectionID);
         CFDictionaryAddValue(dictionary, @"displayName", displayName);
-        CFDictionaryAddValue(dictionary, @"hasVideo", callInfo.hasVideo ? @"Video" : @"");
+        CFDictionaryAddValue(dictionary, @"hasVideo", callInfo.hasVideo ? @"Video " : @"");
         
         CFNotificationCenterPostNotification(CFNotificationCenterGetDistributedCenter(), (CFStringRef)@"com.yuigawada.callslicer/push-notification", nil, dictionary, true);
         CFRelease(dictionary);
@@ -292,70 +195,26 @@ static void prepareDistributedCenter(CFNotificationCenterRef center, void *obser
 
 %end
 
-
-
 //-MARK: init
 
 %ctor
 {
-    preferences = [[HBPreferences alloc] initWithIdentifier:@"com.yuigawada.callslicer"];
-    [preferences registerBool:&enabled default:YES forKey:@"Enabled"];
-    [preferences registerBool:&enabledWhenRingerOn default:YES forKey:@"EnabledWhenRingerOn"];
-    //    [preferences registerBool:&enabledOnlyOnLockScreen default:YES forKey:@"EnabledOnlyOnLockScreen"];
-    //    [preferences registerObject:&message default:@"You are receiving a Call!" forKey:@"Message"];
-    
     NSString *processName = [NSProcessInfo processInfo].processName;
     bool isSpringboard = [@"SpringBoard" isEqualToString:processName];
     if (isSpringboard && enabled) {
-        
-
-        
         //For prepareing DistributedCenter
         CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
                                         NULL,
                                         prepareDistributedCenter,
                                         CFSTR("com.yuigawada.callslicer/prepare-DistributedCenter"),
                                         NULL,
-                                        CFNotificationSuspensionBehaviorDeliverImmediately);
-        
-        
-        //For getting lockscreen info.
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
-                                        NULL,
-                                        displayStatus,
-                                        CFSTR("com.apple.iokit.hid.displayStatus"),
-                                        NULL,
-                                        CFNotificationSuspensionBehaviorDeliverImmediately);
-        
-        //Called when the device is being Locked or Unlocked.
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
-                                        NULL,
-                                        lockstate,
-                                        CFSTR("com.apple.springboard.lockstate"),
-                                        NULL,
-                                        CFNotificationSuspensionBehaviorDeliverImmediately);
-        
-        //Called ONLY when the device is being Locked.
-        //(But lockcomplete is always called before lockstate being called.)
-        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),
-                                        NULL,
-                                        lockcomplete,
-                                        CFSTR("com.apple.springboard.lockcomplete"),
-                                        NULL,
-                                        CFNotificationSuspensionBehaviorDeliverImmediately);
+                                        CFNotificationSuspensionBehaviorDeliverImmediately);            
         
     }
     else {
+        targetProcessName = processName;
         targetSectionID = [[NSBundle mainBundle] bundleIdentifier];
         NSLog(@"targetSectionID: %@",targetSectionID);
-        
-        //稀に、respring直後にDistributedCenterがうまく機能しないことが報告されており、Springboard上でのDistributedCenterの登録がうまく機能していないのだと推測。
-        //故にDarwinNotifyCenterで登録にディレイをかけることにした。具体的な処理サイクルについてはコミットログを参照してください。
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(), (CFStringRef)@"com.yuigawada.callslicer/prepare-DistributedCenter", nil, nil, true);
     }
-    
-    
-    NSLog(@"Enabled: %d", enabled);
-    NSLog(@"EnabledWhenRingerOn: %d", enabledWhenRingerOn);
-    NSLog(@"EnabledOnlyOnLockScreen: %d", enabledOnlyOnLockScreen);
 }

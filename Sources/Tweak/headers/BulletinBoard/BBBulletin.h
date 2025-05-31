@@ -6,6 +6,10 @@
 
 #import "BulletinBoard-Structs.h"
 
+@interface BBAction : NSObject
+	+(id)actionWithLaunchBundleID:(NSString*)arg1 callblock:(id)arg2;
+@end
+
 @class BBAction, BBSound, BBAssertion, BBAttachments, NSString, NSDate, NSTimeZone, NSMutableDictionary, NSArray, NSDictionary, NSSet, BBContent, BBObserver;
 
 @interface BBBulletin : NSObject <NSCopying, NSCoding> {
